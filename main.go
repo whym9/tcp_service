@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"tcp_service/servers"
+	"tcp_service/internal/metrics"
+	"tcp_service/internal/servers"
 )
 
 func main() {
@@ -19,7 +20,7 @@ func main() {
 		return
 	}
 	fmt.Println("TCP Server has started")
-
+	go metrics.Metrics(addr)
 	for {
 		connect, err := server.Accept()
 

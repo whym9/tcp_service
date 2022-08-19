@@ -3,32 +3,18 @@ package servers
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
 
-	"time"
+	"tcp_service/internal/metrics"
 
 	"google.golang.org/grpc"
 )
 
-type Capture struct {
-	TimeStamp      time.Time     `json: "time"`
-	CaptureLength  int           `json: "caplength"`
-	Length         int           `json: "length"`
-	InterfaceIndex int           `json :  "index"`
-	AccalaryData   []interface{} `json: "accalary"`
-}
-
-type Packet struct {
-	Ci   Capture
-	Data []byte
-}
-
 func Save(connect net.Conn, addr string) {
-
+	metrics.RecordMetrics()
 	conn, err := grpc.Dial(addr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalln(err)
@@ -36,8 +22,8 @@ func Save(connect net.Conn, addr string) {
 	defer conn.Close()
 
 	client := NewClient(conn)
+	fileConntent := []byte{}
 
-	packets := []Packet{}
 	for {
 		read, err := ReceiveALL(connect, 8)
 
@@ -47,7 +33,6 @@ func Save(connect net.Conn, addr string) {
 		}
 
 		size := binary.BigEndian.Uint64(read)
-		fmt.Println(size)
 
 		read, err = ReceiveALL(connect, size)
 
@@ -57,36 +42,18 @@ func Save(connect net.Conn, addr string) {
 		}
 
 		if size == 4 && string(read) == "STOP" {
+
 			break
 		}
 
-		cap := Capture{}
-
-		err = json.Unmarshal(read, &cap)
-		read, err = ReceiveALL(connect, 8)
-
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-
-		size = binary.BigEndian.Uint64(read)
-
-		read, err = ReceiveALL(connect, size)
-
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-
-		packets = append(packets, Packet{cap, read})
+		fileConntent = append(fileConntent, read...)
 
 		fmt.Printf("File size: %v\n", size)
 
 	}
 	fmt.Println("Stopped receiving")
 
-	statistics, err := client.Upload(context.Background(), packets)
+	statistics, err := client.Upload(context.Background(), fileConntent)
 	if err != nil {
 		connect.Write([]byte("Could not make statistics"))
 		connect.Close()

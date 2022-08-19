@@ -2,11 +2,10 @@ package servers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
-	uploadpb "tcp_service/proto"
+	uploadpb "tcp_service/internal/proto"
 
 	"google.golang.org/grpc"
 )
@@ -21,7 +20,7 @@ func NewClient(conn grpc.ClientConnInterface) Client {
 	}
 }
 
-func (c Client) Upload(con context.Context, packets []Packet) (string, error) {
+func (c Client) Upload(con context.Context, file []byte) (string, error) {
 	ctx, cancel := context.WithDeadline(con, time.Now().Add(10*time.Second))
 	defer cancel()
 
@@ -30,26 +29,26 @@ func (c Client) Upload(con context.Context, packets []Packet) (string, error) {
 
 		return "", err
 	}
+	be := 0
+	en := 1024
 
-	for _, pack := range packets {
+	for {
 
-		b, err := json.Marshal(&pack.Ci)
+		if en > len(file) {
+			if err := stream.Send(&uploadpb.UploadRequest{Chunk: file[be:]}); err != nil {
 
-		if err != nil {
+				return "", err
+			}
+			break
+		}
+
+		if err := stream.Send(&uploadpb.UploadRequest{Chunk: file[be:en]}); err != nil {
 
 			return "", err
 		}
 
-		if err := stream.Send(&uploadpb.UploadRequest{Chunk: b}); err != nil {
-
-			return "", err
-		}
-
-		if err := stream.Send(&uploadpb.UploadRequest{Chunk: pack.Data}); err != nil {
-
-			return "", err
-		}
-
+		be = en
+		en += 1024
 	}
 
 	res, err := stream.CloseAndRecv()

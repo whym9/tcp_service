@@ -4,30 +4,17 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
-
-	"encoding/json"
-	"time"
-
-	"github.com/google/gopacket/pcap"
+	"os"
 )
-
-type Capture struct {
-	TimeStamp      time.Time     `json: "time"`
-	CaptureLength  int           `json: "caplength"`
-	Length         int           `json: "length"`
-	InterfaceIndex int           `json :  "index"`
-	AccalaryData   []interface{} `json: "accalary"`
-}
 
 func main() {
 	filename := *flag.String("fileName", "lo.pcapng", "pcap file directory")
 	addr := *flag.String("address", "localhost:8080", "address of the GRPC server")
 	flag.Parse()
-	handle, err := pcap.OpenOffline(filename)
-	defer handle.Close()
+
+	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatal(err)
 		return
@@ -37,40 +24,34 @@ func main() {
 
 	for {
 
-		data, ci, err := handle.ZeroCopyReadPacketData()
-		if err == io.EOF || err != nil {
+		bin := make([]byte, 1024)
+		n, err := file.Read(bin)
+
+		if err != nil {
+			log.Fatal(err)
+			break
+		}
+
+		b := make([]byte, 8)
+		binary.BigEndian.PutUint64(b, uint64(len(bin[:n])))
+
+		_, err = connect.Write(b)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		_, err = connect.Write(bin[:n])
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		if n < 1024 {
+
 			bin := make([]byte, 8)
 			binary.BigEndian.PutUint64(bin, 4)
 			connect.Write(bin)
 			connect.Write([]byte("STOP"))
 			break
-		}
-
-		capi := Capture{
-			ci.Timestamp,
-			ci.CaptureLength,
-			ci.Length,
-			ci.InterfaceIndex,
-			ci.AncillaryData,
-		}
-
-		b, _ := json.Marshal(&capi)
-
-		bin := make([]byte, 8)
-		binary.BigEndian.PutUint64(bin, uint64(len(b)))
-
-		connect.Write(bin)
-		connect.Write(b)
-
-		bin = make([]byte, 8)
-
-		binary.BigEndian.PutUint64(bin, uint64(len(data)))
-		connect.Write(bin)
-		connect.Write(data)
-
-		if err != nil {
-			panic(err)
-
 		}
 
 	}
